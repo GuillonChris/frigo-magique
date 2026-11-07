@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frigo Magique : Planificateur Hebdomadaire</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Définition des couleurs personnalisées basées sur le logo */
+        :root {
+            --color-primary: #8EAC81; /* Vert Olive Doux */
+            --color-secondary: #E35338; /* Rouge/Orange Chaud (Accents) */
+            --color-text-dark: #3F4835; /* Marron foncé pour le texte */
+        }
+        body { font-family: 'Inter', sans-serif; background-color: #F7F5F0; }
+        
+        /* Styles spécifiques pour le header et accents */
+        .bg-app-primary { background-color: var(--color-primary); }
+        .text-app-dark { color: var(--color-text-dark); }
+        .bg-app-accent { background-color: var(--color-secondary); }
+        .hover\:bg-app-accent-dark:hover { background-color: #C0432E; }
+
+        /* Style pour la barre de défilement pour les longs frigos */
+        #pantry-list, #recipe-list-modal, #details-modal-content {
+            scrollbar-width: thin;
+            scrollbar-color: #8EAC81 #f3f4f6;
+        }
+        #pantry-list::-webkit-scrollbar, #recipe-list-modal::-webkit-scrollbar, #details-modal-content::-webkit-scrollbar {
+            width: 8px;
+        }
+        #pantry-list::-webkit-scrollbar-thumb, #recipe-list-modal::-webkit-scrollbar-thumb, #details-modal-content::-webkit-scrollbar-thumb {
+            background-color: #8EAC81;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <!-- Header (Sticky) -->
+    <header id="app-header" class="bg-app-primary text-white p-4 sticky top-0 z-20 shadow-lg"></header>
+
+    <main class="max-w-5xl mx-auto p-4 md:p-6 space-y-8">
+        <!-- Section: Statistiques globales -->
+        <div class="flex justify-between items-end">
+            <h2 class="text-xl font-bold text-app-dark flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-app-accent"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"></path><path d="M12 6v6l4 2"></path></svg>
+                Menu de la Semaine
+            </h2>
+            <div class="text-right">
+                <div class="text-sm text-slate-500">Budget Estimé</div>
+                <div id="total-budget" class="text-2xl font-bold text-app-primary">0.00 €</div>
+            </div>
+        </div>
+
+        <!-- Section: Grille des Recettes -->
+        <div id="recipe-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Les recettes seront injectées ici -->
+        </div>
+    </main>
+
+    <!-- Floating Action Button for Shopping List -->
+    <div class="fixed bottom-6 right-6 z-30">
+        <button 
+            onclick="showShoppingListModal()"
+            class="bg-app-accent hover:bg-app-accent-dark text-white p-4 rounded-full shadow-lg flex items-center gap-3 transition-transform hover:scale-105"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
+            <span class="font-bold hidden sm:inline">Liste de courses (<span id="shopping-list-count">0</span>)</span>
+        </button>
+    </div>
+
+    <!-- Modal: Remplacement Recette -->
+    <div id="replace-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+        <div class="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div class="p-4 border-b border-slate-100 flex justify-between items-center flex-shrink-0">
+                <h3 class="font-bold text-lg">Remplacer la recette</h3>
+                <button onclick="closeReplaceModal()" class="p-2 hover:bg-slate-100 rounded-full text-slate-800"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+            </div>
+            
+            <!-- Zone de recherche ajoutée ici -->
+            <div class="p-4 flex-shrink-0">
+                <div class="relative">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-3 top-2.5 text-slate-400"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input 
+                        type="text" 
+                        id="recipe-search-input" 
+                        oninput="filterAndRenderRecipes()"
+                        placeholder="Rechercher une recette par nom..." 
+                        class="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    />
+                </div>
+            </div>
+
+            <div id="recipe-list-modal" class="p-4 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <!-- Les recettes disponibles seront injectées ici -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal Détails Recette -->
+    <div id="details-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+        <div id="details-modal-content" class="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
+            <!-- Contenu dynamique de la recette -->
+        </div>
+    </div>
+
+
+    <!-- Modal: Liste de courses -->
+    <div id="shopping-modal" class="fixed inset-0 z-50 hidden items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-sm">
+        <div class="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl">
+             <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-emerald-50 rounded-t-2xl">
+               <div>
+                 <h3 class="font-bold text-xl text-emerald-900 flex items-center gap-2">
+                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
+                   Ma Liste
+                 </h3>
+                 <p class="text-xs text-emerald-700 mt-1">Basée sur les ingrédients manquants</p>
+               </div>
+               <button onclick="closeShoppingListModal()" class="p-2 hover:bg-emerald-100 rounded-full text-emerald-800"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+             </div>
+             
+             <div id="shopping-list-items" class="p-0 overflow-y-auto flex-1 bg-slate-50">
+               <!-- Les articles de la liste seront injectés ici -->
+             </div>
+
+             <div class="p-4 border-t border-slate-200 bg-white rounded-b-2xl shadow-[0_-5px_15px_rgba(0,0,0,0.05)]">
+               <div class="flex justify-between items-center mb-4 text-sm font-medium">
+                 <span>Budget courses est.</span>
+                 <span id="shopping-total-budget" class="text-app-primary font-bold">0.00 €</span>
+               </div>
+               <button 
+                 onclick="copyToClipboard()"
+                 class="w-full bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-sm"
+               >
+                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                 Copier l'intégralité pour Keep
+               </button>
+               <p class="text-center text-[10px] text-slate-400 mt-2">
+                 Copie les besoins de la semaine. Utilisez "Ajouter au Panier" pour une seule recette.
+               </p>
+             </div>
+          </div>
+    </div>
+    
+    <script>
+        // --- 1. Base de données de recettes (Pour 4 personnes) ---
+        const RECIPES_DB = [
+            {
+                id: 1, title: "Omelette Complète", category: "Rapide", prepTime: "5 min", cookTime: "5 min", difficulty: "Novice", pricePerPerson: 1.50,
+                image: "https://images.unsplash.com/photo-1510693206972-df098062cb71?auto=format&fit=crop&q=80&w=400",
+                ingredients: [
+                    { name: "oeufs", qty: 8, unit: "pièces" }, { name: "lait", qty: 100, unit: "ml" }, 
+                    { name: "fromage râpé", qty: 100, unit: "g" }, { name: "jambon", qty: 4, unit: "tranches" }, 
+                    { name: "beurre", qty: 20, unit: "g" }
+                ], instructions: ["(2 min) Battre les oeufs avec le lait, le sel et le poivre.", "(3 min) Faire fondre le beurre dans une poêle chaude et verser le mélange.", "(5 min) Ajouter le jambon et le fromage, puis plier l'omelette."]
+            },
+            {
+                id: 2, title: "Pâtes Carbonara", category: "Plat principal", prepTime: "10 min", cookTime: "10 min", difficulty: "Débutant", pricePerPerson: 2.20,
+                image: "https://images.unsplash.com/photo-1612874742237-6526221588e3?auto=format&fit=crop&q=80&w=400",
+                ingredients: [
+                    { name: "pâtes", qty: 500, unit: "g" }, { name: "crème fraîche", qty: 200, unit: "ml" }, 
+                    { name: "lardons", qty: 200, unit: "g" }, { name: "oignon", qty: 1, unit: "pièce" }, 
+                    { name: "oeufs", qty: 4, unit: "pièces" }, { name: "parmesan", qty: 50, unit: "g" }
+                ], instructions: ["(10 min) Cuire les pâtes al dente. Égoutter.", "(5 min) Pendant ce temps, faire revenir les lardons et l'oignon émincé.", "(2 min) Dans un bol, mélanger la crème, les jaunes d'oeufs, le sel et le poivre.", "(3 min) Hors du feu, mélanger les pâtes, les lardons, et la sauce à l'oeuf."]
+            },
+            {
+                id: 3, title: "Quiche Lorraine", category: "Dîner", prepTime: "15 min", cookTime: "25 min", difficulty: "Intermédiaire", pricePerPerson: 1.80,
+                image: "https://images.unsplash.com/photo-1628157795325-1e3a9a164b0f?auto=format&fit=crop&q=80&w=400",
+                ingredients: [
+                    { name: "oeufs", qty: 4, unit: "pièces" }, { name: "lait", qty: 200, unit: "ml" }, 
+                    { name: "crème fraîche", qty: 200, unit: "ml" }, { name: "lardons", qty: 200, unit: "g" }, 
+                    { name: "pâte brisée", qty: 1, unit: "pièce" }
+                ], instructions: ["(5 min) Préchauffer le four à 180°C. Étaler la pâte et la placer dans un moule.", "(5 min) Faire revenir les lardons à la poêle puis les égoutter.", "(5 min) Battre les oeufs, le lait, la crème, le sel et le poivre. Ajouter les lardons et le fromage.", "(25 min) Verser l'appareil dans la pâte et cuire au four."]
+            },
+            {
+                id: 4, title: "Salade César", category: "Entrée/Plat", prepTime: "10 min", cookTime: "5 min", difficulty: "Novice", pricePerPerson: 3.50,
+                image: "https://images.unsplash.com/photo-1550304943-4f24f54ddde9?auto=format&fit=crop&q=80&w=400",
+                ingredients: [
+                    { name: "salade romaine", qty: 2, unit: "pièces" }, { name: "poulet", qty: 400, unit: "g" }, 
+                    { name: "croûtons", qty: 100, unit: "g" }, { name: "parmesan", qty: 60, unit: "g" }, 
+                    { name: "sauce césar", qty: 100, unit: "ml" }
+                ], instructions: ["(5 min) Laver et sécher la salade. Couper le poulet en dés ou en lanières.", "(5 min) Cuire le poulet à la poêle ou au grill jusqu'à ce qu'il soit doré.", "(5 min) Dans un grand saladier, mélanger la salade, le poulet, les croûtons, le parmesan râpé et la sauce césar."]
+            },
+            {
+                id: 5, title: "Pancakes Banane", category: "Petit-déj", prepTime: "10 min", cookTime: "5 min", difficulty: "Débutant", pricePerPerson: 1.00,
+                image: "https://images.unsplash.com/photo-1575853121743-60c24f0a7502?auto=format&fit=crop&q=80&w=400",
+                ingredients: [
+                    { name: "bananes", qty: 4, unit: "pièces" }, { name: "oeufs", qty: 4, unit: "pièces" }, 
+                    { name: "farine", qty: 200, unit: "g" }, { name: "lait", qty: 100, unit: "ml" }, 
+                    { name: "sucre", qty: 50, unit: "g" }
+                ], instructions: ["(3 min) Écraser les bananes à la fourchette.", "(5 min) Ajouter les œufs, la farine, le lait et le sucre. Mélanger jusqu'à obtenir une pâte homogène.", "(5 min) Verser des petits tas de pâte dans une poêle chaude et huilée. Cuire 1 à 2 minutes par face."]
+            },
+            {
+                id: 6, title: "Ratatouille Express", category: "Végétarien", prepTime: "15 min", cookTime: "15 min", difficulty: "Intermédiaire", pricePerPerson: 2.00,
+                image: "https://images.unsplash.com/photo-1572453800999-e8d2d1589b7c?auto=format&fit=crop&q=80&w=400",
+                ingredients: [
+                    { name: "courgettes", qty: 3, unit: "pièces" }, { name: "aubergine", qty: 1, unit: "pièce" }, 
+                    { name: "tomates", qty: 4, unit: "pièces" }, { name: "oignon", qty: 2, unit: "pièces" }, 
+                    { name: "ail", qty: 2, unit: "gousses" }
+                ], instructions: ["(10 min) Couper tous les légumes en dés de taille moyenne. Émincer l'oignon et l'ail.", "(5 min) Dans une grande cocotte, faire revenir l'oignon et l'ail dans l'huile d'olive.", "(15 min) Ajouter tous les autres légumes, saler et poivrer. Couvrir et laisser mijoter à feu moyen. Servir chaud."]
+            },
+            {
+                id: 7, title: "Croque Monsieur", category: "Rapide", prepTime: "5 min", cookTime: "5 min", difficulty: "Novice", pricePerPerson: 1.80,
+                image: "https://images.unsplash.com/photo-1621800043295-a73fe2f76e2c?auto=format&fit=crop&q=80&w=400",
+                ingredients: [
+                    { name: "pain de mie", qty: 8, unit: "tranches" }, { name: "jambon", qty: 4, unit: "tranches" }, 
+                    { name: "fromage râpé", qty: 100, unit: "g" }, { name: "beurre", qty: 40, unit: "g" }
+                ], instructions: ["(2 min) Beurrer légèrement les tranches de pain de mie.", "(2 min) Garnir deux tranches avec le jambon et le fromage râpé, puis refermer.", "(5 min) Cuire à la poêle ou au grill, 2-3 minutes par face, jusqu'à ce que le fromage soit fondu et le pain doré."]
+            },
+            {
+                id: 8, title: "Riz Cantonais", category: "Plat principal", prepTime: "10 min", cookTime: "10 min", difficulty: "Débutant", pricePerPerson: 1.50,
+                image: "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&q=80&w=400",
+                ingredients: [
+                    { name: "riz cuit", qty: 600, unit: "g" }, { name: "dés de jambon", qty: 150, unit: "g" }, 
+                    { name: "petits pois", qty: 100, unit: "g" }, { name: "oeufs", qty: 3, unit: "pièces" }, 
+                    { name: "sauce soja", qty: 30, unit: "ml" }
+                ], instructions: ["(5 min) Faire cuire le riz (si ce n'est pas un reste). Faire une petite omelette brouillée et la couper en morceaux.", "(5 min) Dans un wok ou une grande poêle, faire sauter le riz avec les dés de jambon et les petits pois.", "(5 min) Ajouter l'omelette, la sauce soja et remuer. Servir immédiatement."]
+            }
+        ];
+
+        const SUGGESTED_INGREDIENTS = [
+            "oeufs", "lait", "farine", "pâtes", "riz", "tomates", "oignon", "beurre", "crème fraîche", "jambon", "carottes", "courgettes"
+        ];
+
+        // --- Saisonnalité (Index 0=Jan, 11=Dec) ---
+        const SEASONAL_DATA = {
+            0: ["carotte", "poireau", "chou-fleur", "choux de bruxelles", "pomme", "orange"], // Jan
+            1: ["carotte", "poireau", "chou-fleur", "betterave", "endive", "kiwi"], // Feb
+            2: ["carotte", "poireau", "endive", "pomme de terre", "kiwi", "citron"], // Mar
+            3: ["asperge", "radis", "laitue", "fraise", "rhubarbe"], // Apr
+            4: ["asperge", "fraise", "tomate", "concombre", "courgette", "cerise"], // May
+            5: ["tomate", "courgette", "aubergine", "framboise", "cassis"], // Jun
+            6: ["tomate", "courgette", "aubergine", "poivron", "melon", "pêche"], // Jul
+            7: ["tomate", "courgette", "aubergine", "poivron", "figue", "raisin"], // Aug
+            8: ["potimarron", "chou", "brocoli", "pomme", "prune"], // Sep
+            9: ["potimarron", "citrouille", "chou", "champignon", "poire", "coing"], // Oct
+            10: ["potimarron", "poireau", "carotte", "chou-fleur", "mandarine", "clémentine"], // Nov
+            11: ["carotte", "poireau", "chou-fleur", "choux de bruxelles", "pomme", "orange", "mandarine"] // Dec
+        };
+
+        // --- GENERATION DE 500+ RECETTES ---
+
+        const generateBulkRecipes = (count) => {
+            const newRecipes = [];
+            const baseId = RECIPES_DB.length + 1;
+
+            const proteins = ["Poulet", "Boeuf", "Porc", "Thon", "Tofu", "Lentilles", "Saucisse", "Veau", "Jambon", "Dinde", "Agneau", "Crevettes", "Saumon", "Pois Chiches"];
+            const methods = ["Rôti", "Grillé", "Mijoté", "Sauté", "En sauce", "Farcis", "Gratin", "Soupe", "Crumble", "Frit", "Mariné", "Au four", "Poêlé"];
+            const flavors = ["Curry", "Moutarde", "Citron", "Ail et Fines Herbes", "Provençale", "Épicé", "Douceur", "Pesto", "Bolognaise", "Teriyaki", "Barbecue"];
+            const veggies = ["Carottes", "Courgettes", "Brocoli", "Épinards", "Tomates", "Poivrons", "Champignons", "Aubergines", "Haricots Verts", "Betteraves", "Céleri", "Oignons", "Chou-fleur", "Asperges"];
+            const grains = ["Riz", "Pâtes", "Quinoa", "Pommes de terre", "Semoule", "Boulgour", "Riz Basmati", "Polenta"];
+            const liquids = ["Crème fraîche", "Lait de coco", "Bouillon de légumes", "Vin blanc", "Sauce tomate", "Lait"];
+            const categories = ["Plat principal", "Végétarien", "Rapide", "Exotique", "Fête", "Soupe/Velouté", "Dessert"];
+            const difficulties = ["Novice", "Débutant", "Intermédiaire", "Pro", "Expert"]; 
+
+            const baseIngredients = {
+                "oeufs": { qty: 4, unit: "pièces" },
+                "oignon": { qty: 1, unit: "pièce" },
+                "ail": { qty: 2, unit: "gousses" },
+                "sel": { qty: 10, unit: "g" },
+                "poivre": { qty: 5, unit: "g" },
+                "huile d'olive": { qty: 30, unit: "ml" }
+            };
+            
+            const getRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
+            const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+            
+            const generateInstructions = (protein, vegetable, grain, method, difficulty, flavor, liquid) => {
+                const p = protein.toLowerCase();
+                const v1 = vegetable.toLowerCase();
+                const g = grain.toLowerCase();
+                const m = method.toLowerCase();
+                const d = difficulty.toLowerCase();
+                const f = flavor.toLowerCase();
+                const l = liquid.toLowerCase();
+
+                const steps = [];
+                const prep1 = getRandomInt(1, 5);
+                
+                steps.push(`(${prep1} min) Préparation : Lavez ${d === 'novice' ? 'les légumes' : `et coupez finement ${v1}`}. Émincez l'oignon et l'ail.`);
+                
+                if (m.includes("mariné") || d === 'expert') {
+                    const time = d === 'expert' ? 15 : 5;
+                    steps.push(`(${time} min) Marinade : Mélangez ${p} avec des épices et un peu d'huile. Laissez reposer.`);
+                } else if (m.includes("rôti") || m.includes("au four")) {
+                    steps.push(`(3 min) Préchauffage : Préchauffez le four à ${getRandomInt(180, 220)}°C. Préparez la plaque.`);
+                }
+                
+                if (g.includes("pâtes") || g.includes("riz")) {
+                    const time = getRandomInt(8, 12);
+                    steps.push(`(${time} min) Cuisson de base : Faites cuire ${g} al dente (ou selon le paquet). Égouttez et réservez.`);
+                }
+
+                const timeSaisie = getRandomInt(4, 7);
+                steps.push(`(${timeSaisie} min) Saisie : Dans une poêle avec l'huile d'olive, faites revenir l'oignon et l'ail pendant 2 min. Ajoutez ensuite ${p} et laissez dorer.`);
+
+                if (m.includes("mijoté") || m.includes("soupe") || m.includes("en sauce")) {
+                    const timeMijote = getRandomInt(15, 35);
+                    steps.push(`(${timeMijote} min) Cuisson : Versez le liquide (bouillon ou ${l}) et la saveur (${f}). Couvrez et laissez mijoter.`);
+                } else if (m.includes("rôti") || m.includes("au four")) {
+                    const timeCuissonFour = getRandomInt(30, 50);
+                    steps.push(`(${timeCuissonFour} min) Cuisson au four : Placez ${p} et ${v1} au four. Retournez à mi-cuisson.`);
+                }
+
+                const timeFinition = getRandomInt(1, 3);
+                steps.push(`(${timeFinition} min) Finition : Ajoutez le ${g} cuit (si applicable) et remuez bien. Vérifiez l'assaisonnement.`);
+                
+                if (d === 'expert') {
+                    steps.push(`(2 min) Dressage : Laissez reposer 5 minutes hors du feu. Ajoutez des garnitures et dressez chaque assiette avec soin.`);
+                }
+
+                return steps;
+            };
+
+            for (let i = 0; i < count; i++) {
+                const p = getRandom(proteins);
+                const m = getRandom(methods);
+                const f = getRandom(flavors);
+                const v1 = getRandom(veggies);
+                const g = getRandom(grains);
+                const l = getRandom(liquids);
+                const c = getRandom(categories);
+                const d = getRandom(difficulties);
+                
+                let title;
+                if (c === "Soupe/Velouté") {
+                    title = `${m} de ${v1} crémeux`;
+                } else if (c === "Dessert") {
+                    title = `${m} aux ${v1} et ${f}`;
+                } else {
+                    title = `${m} de ${p} ${f} avec ${g}`;
+                }
+                
+                let ingredientList = [
+                    { name: p.toLowerCase(), qty: getRandomInt(400, 800), unit: "g" },
+                    { name: v1.toLowerCase(), qty: getRandomInt(2, 4), unit: "pièces" },
+                    { name: g.toLowerCase(), qty: getRandomInt(300, 500), unit: "g" },
+                    { name: l.toLowerCase(), qty: getRandomInt(100, 400), unit: "ml" },
+                ];
+                
+                Object.entries(baseIngredients).slice(0, getRandomInt(2, 4)).forEach(([name, details]) => {
+                     if (!ingredientList.some(ing => ing.name === name)) {
+                        ingredientList.push({ ...details, name });
+                     }
+                });
+                
+                const baseCost = 2.0 + Math.random() * 3.5;
+                const prepTimeBase = getRandomInt(10, 20); 
+                const cookTimeBase = getRandomInt(20, 50);
+
+                newRecipes.push({
+                    id: baseId + i,
+                    title: title,
+                    category: c,
+                    prepTime: `${prepTimeBase} min`,
+                    cookTime: `${cookTimeBase} min`,
+                    difficulty: d,
+                    pricePerPerson: Math.round(baseCost * 100) / 100,
+                    image: `https://placehold.co/400x160/cbd5e1/475569?text=${title.replace(/ /g, '+').substring(0, 20)}`,
+                    ingredients: ingredientList,
+                    instructions: generateInstructions(p, v1, g, m, d, f, l) 
+                });
+            }
+            return newRecipes;
+        };
+
+        const RECIPES_TO_GENERATE = 480;
+        const generatedRecipes = generateBulkRecipes(RECIPES_TO_GENERATE);
+        RECIPES_DB.push(...generatedRecipes);
+
+        const getCurrentSeasonalIngredients = () => {
+            const month = new Date().getMonth(); 
+            return SEASONAL_DATA[month] || [];
+        };
+
+        const isIngredientSeasonal = (ingredientName) => {
+            const seasonalList = getCurrentSeasonalIngredients();
+            const normalizedName = ingredientName.toLowerCase().trim();
+            return seasonalList.some(seasonalIng => normalizedName.includes(seasonalIng));
+        };
+        
+        const calculateQty = (baseQty, baseServings, targetServings) => {
+            return Math.round((baseQty / baseServings) * targetServings * 10) / 10;
+        };
+        
+        const findRecipeById = (id) => RECIPES_DB.find(r => r.id === id);
+
+        const showToast = (message) => {
+            const toast = document.createElement('div');
+            toast.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-4 py-2 rounded-lg shadow-xl z-50 text-sm opacity-0 transition-opacity duration-300';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.opacity = '1';
+            }, 10);
+            
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.addEventListener('transitionend', () => toast.remove());
+            }, 3000);
+        };
+
+        let myPantry = [];
+        let weekPlan = [];
+        let defaultServings = 4;
+        let replacingIndex = null; 
+
+        const saveState = () => {
+            localStorage.setItem("myPantry", JSON.stringify(myPantry));
+            localStorage.setItem("weekPlan", JSON.stringify(weekPlan));
+            localStorage.setItem("defaultServings", defaultServings);
+        };
+
+        const loadState = () => {
+            const savedPantry = localStorage.getItem("myPantry");
+            myPantry = savedPantry ? JSON.parse(savedPantry) : ["sel", "poivre", "huile", "eau"];
+
+            const savedServings = localStorage.getItem("defaultServings");
+            defaultServings = savedServings ? parseInt(savedServings) : 4;
+            
+            const savedPlan = localStorage.getItem("weekPlan");
+            
+            if (savedPlan) {
+                weekPlan = JSON.parse(savedPlan);
+            } else {
+                const shuffled = [...RECIPES_DB].sort(() => 0.5 - Math.random());
+                weekPlan = shuffled.slice(0, 5).map(r => ({
+                    recipeId: r.id,
+                    customServings: defaultServings
+                }));
+            }
+        };
+
+        const renderDifficulty = (difficulty) => {
+            let colorClass;
+            let label;
+            
+            switch(difficulty) {
+                case 'Novice':
+                    colorClass = 'bg-green-100 text-green-700 border border-green-200';
+                    label = 'Novice';
+                    break;
+                case 'Débutant':
+                    colorClass = 'bg-emerald-100 text-emerald-700 border border-emerald-200';
+                    label = 'Débutant';
+                    break;
+                case 'Intermédiaire':
+                    colorClass = 'bg-yellow-100 text-yellow-700 border border-yellow-200';
+                    label = 'Intermédiaire';
+                    break;
+                case 'Pro':
+                    colorClass = 'bg-orange-100 text-orange-700 border border-orange-200';
+                    label = 'Pro';
+                    break;
+                case 'Expert':
+                    colorClass = 'bg-red-100 text-red-700 border border-red-200';
+                    label = 'Expert';
+                    break;
+                default:
+                    return '';
+            }
+
+            return `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm ${colorClass}">${label}</span>`;
+        };
+
+        const renderHeader = () => {
+            const headerElement = document.getElementById('app-header');
+            const totalBudget = calculateTotalBudget();
+
+            headerElement.innerHTML = `
+                <div class="max-w-5xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+                    <div class="flex items-center gap-3 w-full md:w-auto">
+                        <div class="flex items-center gap-2">
+                            <div style="color: #3F4835;">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                            </div>
+                            <div>
+                                <h1 class="text-xl font-bold leading-none text-app-dark">Frigo Magique</h1>
+                                <p class="text-xs" style="color: #E35338;">Génération de Recettes</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-4 w-full md:w-auto bg-app-primary/80 p-2 rounded-lg justify-between md:justify-start">
+                        <div class="flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                            <span class="text-sm font-medium">Base :</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="handleGlobalServingsChange(defaultServings - 1)" class="w-8 h-8 bg-app-primary rounded-full hover:bg-app-primary/90 font-bold disabled:opacity-50" ${defaultServings <= 1 ? 'disabled' : ''}>-</button>
+                            <span class="w-8 text-center font-bold">${defaultServings}</span>
+                            <button onclick="handleGlobalServingsChange(defaultServings + 1)" class="w-8 h-8 bg-app-primary rounded-full hover:bg-app-primary/90 font-bold">+</button>
+                        </div>
+                    </div>
+                    
+                    <button 
+                        onclick="togglePantry()"
+                        class="text-sm bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg flex items-center gap-2 transition-colors w-full md:w-auto justify-center"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.46 5h.01"></path><path d="M7 10h.01"></path><path d="M7 14h.01"></path><path d="M11 10h.01"></path><path d="M11 14h.01"></path><path d="M15 10h.01"></path><path d="M15 14h.01"></path><path d="M21 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2"></path></svg>
+                        ${headerElement.classList.contains('pantry-open') ? "Masquer Frigo" : `Mon Frigo (${myPantry.length})`}
+                    </button>
+                </div>
+                ${headerElement.classList.contains('pantry-open') ? renderPantryDrawer() : ''}
+            `;
+            document.getElementById('total-budget').textContent = `${totalBudget.toFixed(2)} €`;
+        };
+
+        const renderPantryDrawer = () => {
+            const suggestedButtons = SUGGESTED_INGREDIENTS.map(ing => {
+                const isPresent = myPantry.includes(ing);
+                return `
+                    <button onclick="addPantryItem('${ing}')" ${isPresent ? 'disabled' : ''} class="text-xs px-2 py-1 rounded-full border ${isPresent ? 'bg-app-primary/50 text-app-dark border-transparent cursor-default' : 'bg-transparent border-app-primary text-white hover:bg-app-primary/80'}">
+                        ${isPresent ? ing : `+ ${ing}`}
+                    </button>
+                `;
+            }).join('');
+
+            const pantryItems = myPantry.map(ing => `
+                <span class="bg-white text-app-dark text-xs px-2 py-1 rounded-full flex items-center gap-1">
+                    ${ing} 
+                    <button onclick="removePantryItem('${ing}')" class="text-app-primary/80 hover:text-app-dark focus:outline-none"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+                </span>
+            `).join('');
+
+            return `
+                <div class="max-w-5xl mx-auto mt-4 bg-app-primary/80 p-4 rounded-xl backdrop-blur-sm animate-in slide-in-from-top-2">
+                    <div class="flex gap-2 mb-3">
+                        <input id="pantry-input" onkeydown="if(event.key === 'Enter') addPantryItem(this.value)" placeholder="Ajouter ingrédient (ex: oeufs)..." class="flex-1 px-3 py-2 rounded text-slate-800 text-sm focus:outline-none" />
+                        <button onclick="addPantryItem(document.getElementById('pantry-input').value)" class="bg-app-accent px-4 rounded hover:bg-app-accent-dark font-bold"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></button>
+                    </div>
+                    <div class="flex flex-wrap gap-2 mb-3">
+                        <span class="text-xs text-white/80 uppercase tracking-wider py-1 mr-2">Suggérés:</span>
+                        ${suggestedButtons}
+                    </div>
+                    <div id="pantry-list" class="pt-3 border-t border-app-primary/50 flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                        ${pantryItems}
+                    </div>
+                </div>
+            `;
+        };
+
+        const renderRecipeGrid = () => {
+            const grid = document.getElementById('recipe-grid');
+            let html = '';
+
+            weekPlan.forEach((item, index) => {
+                const recipe = findRecipeById(item.recipeId);
+                if (!recipe) return;
+
+                const missingIngredients = getMissingIngredients(recipe);
+                const cost = (recipe.pricePerPerson * item.customServings).toFixed(2);
+                
+                const ingredientPreview = recipe.ingredients.slice(0, 3).map(ing => `
+                    <li class="flex justify-between">
+                        <span>${ing.name}</span>
+                        <span class="text-slate-400">${calculateQty(ing.qty, 4, item.customServings)} ${ing.unit}</span>
+                    </li>
+                `).join('');
+                const ingredientMore = recipe.ingredients.length > 3 ? `<li class="text-xs italic text-slate-400">et ${recipe.ingredients.length - 3} autres...</li>` : '';
+
+                let seasonalIngredientCount = 0;
+                recipe.ingredients.forEach(ing => {
+                    if (isIngredientSeasonal(ing.name)) {
+                        seasonalIngredientCount++;
+                    }
+                });
+                const seasonalPercentage = recipe.ingredients.length > 0 ? (seasonalIngredientCount / recipe.ingredients.length) * 100 : 0;
+                const isSeasonalChoice = seasonalPercentage >= 30;
+                
+                const seasonalIcon = isSeasonalChoice ? `
+                    <span title="Recette de saison" class="text-green-300">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M11 20A7 7 0 0 1 9.8 6.1C15.25 10.5 15 17 4 21c2.18-.73 4.29-1.39 6.27-2.09l.4-.14z"></path><path d="M14 10.45A5.85 5.85 0 0 0 16 11c1.23 0 2-1 2-2.35 0-1.2-.77-1.85-2-1.85-1 0-1.75.5-2 .77"></path>
+                        </svg>
+                    </span>
+                ` : '';
+                
+                const difficultyHtml = renderDifficulty(recipe.difficulty);
+
+                html += `
+                    <div class="cursor-pointer bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full group hover:shadow-md transition-all">
+                        <!-- Image Area -->
+                        <div class="relative h-40" onclick="showRecipeDetailsModal(${recipe.id}, ${item.customServings})">
+                            <img src="${recipe.image}" alt="${recipe.title}" class="w-full h-full object-cover" onerror="this.onerror=null;this.src='https://placehold.co/400x160/cbd5e1/475569?text=Recette+${recipe.id}'" />
+                            <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex flex-col justify-end p-3">
+                                <h3 class="text-white font-bold text-lg leading-tight flex items-center gap-2">
+                                    ${recipe.title}
+                                    ${seasonalIcon}
+                                </h3>
+                                <div class="text-white/80 text-xs flex items-center justify-between w-full mt-1">
+                                    <span class="flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg> Total: ${recipe.prepTime} + ${recipe.cookTime}</span>
+                                </div>
+                            </div>
+                            <button 
+                                onclick="event.stopPropagation(); openReplaceModal(${index})"
+                                class="absolute top-2 right-2 bg-white/90 p-1.5 rounded-full text-slate-600 hover:text-app-accent hover:bg-white shadow-sm transition-all"
+                                title="Changer de recette"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.76 2.76L3 7"></path><path d="M3 3v4h4"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.76-2.76L21 17"></path><path d="M21 21v-4h-4"></path></svg>
+                            </button>
+                        </div>
+
+                        <!-- Body -->
+                        <div class="p-4 flex-1 flex flex-col gap-3">
+                            <!-- Servings & Difficulty Control -->
+                            <div class="flex items-center justify-between bg-slate-50 p-2 rounded-lg">
+                                <div class="flex items-center gap-2 text-sm text-slate-600">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                                    <div class="flex items-center gap-1">
+                                        <button 
+                                            onclick="event.stopPropagation(); updateRecipeServings(${index}, ${item.customServings - 1})"
+                                            class="w-6 h-6 flex items-center justify-center bg-white border border-slate-200 rounded text-slate-600 hover:bg-emerald-50 text-xs font-bold disabled:opacity-50"
+                                            ${item.customServings <= 1 ? 'disabled' : ''}
+                                        >-</button>
+                                        <span class="w-4 text-center text-sm font-bold">${item.customServings}</span>
+                                        <button 
+                                            onclick="event.stopPropagation(); updateRecipeServings(${index}, ${item.customServings + 1})"
+                                            class="w-6 h-6 flex items-center justify-center bg-white border border-slate-200 rounded text-slate-600 hover:bg-emerald-50 text-xs font-bold"
+                                        >+</button>
+                                    </div>
+                                </div>
+                                <div class="flex items-center">
+                                    ${difficultyHtml}
+                                </div>
+                            </div>
+
+                            <!-- Cost & Ingredients -->
+                            <div class="flex items-center justify-between text-sm">
+                                <span class="text-slate-500 flex items-center gap-1">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg> Coût:
+                                </span>
+                                <span class="font-bold text-slate-700">${cost} €</span>
+                            </div>
+
+                            <div class="flex-1">
+                                <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 mt-2">Ingrédients</div>
+                                <ul class="space-y-1 text-sm text-slate-600">
+                                    ${ingredientPreview}
+                                    ${ingredientMore}
+                                </ul>
+                            </div>
+
+                            <!-- Missing Alert -->
+                            ${missingIngredients.length > 0 ? `
+                                <div class="mt-2 text-xs text-orange-600 bg-orange-50 px-2 py-1.5 rounded flex items-center gap-1.5">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                                    ${missingIngredients.length} manquants
+                                </div>
+                            ` : `
+                                <div class="mt-2 text-xs text-green-600 bg-green-50 px-2 py-1.5 rounded flex items-center gap-1.5">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                    Frigo OK
+                                </div>
+                            `}
+                        </div>
+                        
+                        <!-- Bouton Recette Terminée -->
+                        <div class="mt-auto p-4 border-t border-slate-100 bg-slate-50 flex justify-center">
+                            <button 
+                                onclick="event.stopPropagation(); completeRecipe(${index})"
+                                class="w-full bg-app-primary hover:opacity-90 text-white font-bold py-2 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                Recette Terminée
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            grid.innerHTML = html;
+        };
+
+        const calculateTotalBudget = () => {
+            return weekPlan.reduce((acc, item) => {
+                const recipe = findRecipeById(item.recipeId);
+                return acc + (recipe ? recipe.pricePerPerson * item.customServings : 0);
+            }, 0);
+        };
+
+        const getMissingIngredients = (recipe) => {
+            return recipe.ingredients.filter(ing => 
+                !myPantry.some(p => p.includes(ing.name) || ing.name.includes(p))
+            ).map(ing => ing.name);
+        };
+
+        const generateShoppingList = () => {
+            const list = {};
+            
+            weekPlan.forEach(item => {
+                const recipe = findRecipeById(item.recipeId);
+                if (!recipe) return;
+
+                recipe.ingredients.forEach(ing => {
+                    const hasIt = myPantry.some(pItem => pItem.includes(ing.name) || ing.name.includes(pItem));
+                    
+                    if (!hasIt) {
+                        const qtyNeeded = calculateQty(ing.qty, 4, item.customServings);
+                        const key = `${ing.name}|${ing.unit}`;
+                        
+                        if (list[key]) {
+                            list[key].qty += qtyNeeded;
+                        } else {
+                            list[key] = { name: ing.name, qty: qtyNeeded, unit: ing.unit };
+                        }
+                    }
+                });
+            });
+
+            return Object.values(list);
+        };
+
+        // --- 5. Fonctions d'Interactions ---
+
+        const togglePantry = () => {
+            const header = document.getElementById('app-header');
+            header.classList.toggle('pantry-open');
+            renderHeader(); 
+        };
+
+        const addPantryItem = (item) => {
+            const norm = item.toLowerCase().trim();
+            if (norm && !myPantry.includes(norm)) {
+                myPantry.push(norm);
+                saveState();
+                renderHeader();
+                renderRecipeGrid();
+            }
+            const input = document.getElementById('pantry-input');
+            if (input) input.value = '';
+        };
+
+        const removePantryItem = (item) => {
+            myPantry = myPantry.filter(i => i !== item);
+            saveState();
+            renderHeader();
+            renderRecipeGrid();
+        };
+
+        const handleGlobalServingsChange = (newVal) => {
+            const val = Math.max(1, parseInt(newVal));
+            defaultServings = val;
+            weekPlan = weekPlan.map(item => ({ ...item, customServings: val }));
+            saveState();
+            renderHeader();
+            renderRecipeGrid();
+        };
+
+        const updateRecipeServings = (index, newServings) => {
+            const val = Math.max(1, parseInt(newServings)); 
+            if (weekPlan[index]) {
+                weekPlan[index].customServings = val;
+                saveState();
+                renderHeader();
+                renderRecipeGrid();
+            }
+        };
+
+        // FONCTION: Marquer une recette comme terminée
+        const completeRecipe = (index) => {
+            if (index >= 0 && index < weekPlan.length) {
+                weekPlan.splice(index, 1);
+                saveState();
+                showToast(`Recette terminée et retirée du plan !`);
+                renderHeader();
+                renderRecipeGrid();
+            }
+        };
+
+        const copyRecipeMissingIngredientsToClipboard = (recipeId, servings, recipeTitle) => {
+            const recipe = findRecipeById(recipeId);
+            if (!recipe) return;
+            
+            const missingItems = [];
+            
+            recipe.ingredients.forEach(ing => {
+                const hasIt = myPantry.some(pItem => pItem.includes(ing.name) || ing.name.includes(pItem));
+                
+                if (!hasIt) {
+                    const qtyNeeded = calculateQty(ing.qty, 4, servings);
+                    missingItems.push(`[ ] ${qtyNeeded} ${ing.unit} ${ing.name} (pour ${recipeTitle})`);
+                }
+            });
+
+            if (missingItems.length === 0) {
+                showToast(`Vous avez déjà tous les ingrédients pour ${recipeTitle} !`);
+                return;
+            }
+
+            const text = missingItems.join('\n');
+            
+            const tempTextArea = document.createElement("textarea");
+            tempTextArea.value = text;
+            document.body.appendChild(tempTextArea);
+            tempTextArea.select();
+            
+            try {
+                document.execCommand('copy');
+                showToast(`Liste copiée ! Collez-la dans votre note Keep "Liste de courses".`);
+            } catch (err) {
+                console.error('Erreur de copie:', err);
+                showToast("Erreur: Impossible de copier. Essayez manuellement.");
+            } finally {
+                document.body.removeChild(tempTextArea);
+                closeRecipeDetailsModal(); 
+            }
+        };
+
+
+        // Modal de Détails Recette
+        const showRecipeDetailsModal = (recipeId, servings) => {
+            const recipe = findRecipeById(recipeId);
+            if (!recipe) return;
+
+            const modal = document.getElementById('details-modal');
+            const content = document.getElementById('details-modal-content');
+
+            const missingIngredients = getMissingIngredients(recipe);
+            const cost = (recipe.pricePerPerson * servings).toFixed(2);
+            
+            const ingredientsHtml = recipe.ingredients.map(ing => {
+                const qty = calculateQty(ing.qty, 4, servings);
+                const isMissing = !myPantry.some(p => p.includes(ing.name) || ing.name.includes(p));
+                
+                const statusIcon = isMissing ? 
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-orange-500"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>' : 
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-500"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+
+                return `
+                    <li class="flex items-center justify-between group py-2 border-b border-slate-100 last:border-b-0">
+                        <span class="capitalize ${isMissing ? 'text-slate-500' : 'text-slate-800 font-medium'} flex items-center gap-2">
+                             ${statusIcon}
+                             ${ing.name}
+                        </span>
+                        <span class="text-sm ${isMissing ? 'text-orange-500 font-bold' : 'text-slate-600'}">${qty} ${ing.unit}</span>
+                    </li>
+                `;
+            }).join('');
+
+            const instructionsHtml = recipe.instructions.map((step, idx) => {
+                const timeMatch = step.match(/^\((\d+ min)\) /);
+                const time = timeMatch ? timeMatch[1] : null;
+                const instructionText = timeMatch ? step.replace(timeMatch[0], '') : step;
+                
+                const timeBadge = time ? `<span class="text-xs font-semibold bg-app-primary/10 text-app-dark px-2 py-0.5 rounded-full">${time}</span>` : '';
+
+                return `
+                    <div class="flex gap-3">
+                        <div class="flex-shrink-0 w-6 h-6 rounded-full bg-app-primary/20 text-app-dark flex items-center justify-center text-sm font-bold mt-0.5">
+                            ${idx + 1}
+                        </div>
+                        <div class="space-y-1">
+                            <p class="text-slate-600 text-sm leading-relaxed">${instructionText}</p>
+                            ${timeBadge}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            const seasonalScore = (() => {
+                let seasonalIngredientCount = 0;
+                recipe.ingredients.forEach(ing => {
+                    if (isIngredientSeasonal(ing.name)) {
+                        seasonalIngredientCount++;
+                    }
+                });
+                const seasonalPercentage = recipe.ingredients.length > 0 ? (seasonalIngredientCount / recipe.ingredients.length) * 100 : 0;
+                return Math.round(seasonalPercentage);
+            })();
+            
+            const difficultyHtml = renderDifficulty(recipe.difficulty);
+
+            content.innerHTML = `
+                <div class="relative h-48 sm:h-64 flex-shrink-0">
+                    <img src="${recipe.image}" alt="${recipe.title}" class="w-full h-full object-cover rounded-t-2xl" onerror="this.onerror=null;this.src='https://placehold.co/800x256/cbd5e1/475569?text=Recette'" />
+                    <button 
+                        onclick="closeRecipeDetailsModal()"
+                        class="absolute top-4 right-4 bg-white/70 hover:bg-white p-2 rounded-full backdrop-blur-md transition-all text-slate-800 shadow-lg"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex items-end">
+                        <div class="p-6 text-white w-full">
+                           <div class="flex items-center gap-2 mb-2 text-sm font-medium">
+                             <span class="bg-app-primary/80 px-2 py-0.5 rounded backdrop-blur-sm">${recipe.category}</span>
+                             <span class="flex items-center gap-1 bg-slate-900/50 px-2 py-0.5 rounded backdrop-blur-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                                ${servings} Pers.
+                             </span>
+                             ${difficultyHtml}
+                           </div>
+                           <h2 class="text-3xl font-bold">${recipe.title}</h2>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-6 sm:p-8 grid md:grid-cols-2 gap-8">
+                    <div>
+                        <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-app-primary"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
+                            Ingrédients
+                            <span class="text-xs font-normal text-slate-500 ml-auto">Budget: ${cost} €</span>
+                        </h3>
+                        <ul class="divide-y divide-slate-100">
+                            ${ingredientsHtml}
+                        </ul>
+                        
+                        ${missingIngredients.length > 0 ? `
+                            <div class="mt-6 bg-orange-50 p-4 rounded-xl border border-orange-100">
+                                <p class="text-sm text-orange-800 font-medium mb-1">Manquants :</p>
+                                <p class="text-sm text-orange-600 capitalize">${missingIngredients.join(", ")}</p>
+                            </div>
+                        ` : ''}
+                        
+                        <div class="mt-6 pt-4 border-t border-slate-100 space-y-2">
+                            <p class="text-xs text-slate-500 flex justify-between items-center">
+                                Temps de Préparation: <span class="font-bold text-slate-700">${recipe.prepTime}</span>
+                            </p>
+                            <p class="text-xs text-slate-500 flex justify-between items-center">
+                                Temps de Cuisson: <span class="font-bold text-slate-700">${recipe.cookTime}</span>
+                            </p>
+                            <p class="text-xs text-slate-500 flex justify-between items-center">
+                                Saisonnalité: 
+                                <span class="font-bold ${seasonalScore >= 30 ? 'text-green-600' : 'text-slate-500'}">${seasonalScore}%</span>
+                            </p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-app-primary"><path d="M4 12V2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v10"></path><path d="M18 12V2a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v10"></path><path d="M1 12h22v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V12z"></path></svg>
+                            Préparation
+                        </h3>
+                        <div class="space-y-4">
+                            ${instructionsHtml}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-6 border-t border-slate-100 bg-slate-50 flex justify-between rounded-b-2xl">
+                    <button 
+                        onclick="copyRecipeMissingIngredientsToClipboard(${recipeId}, ${servings}, '${recipe.title.replace(/'/g, "\\'")}')"
+                        class="bg-app-accent hover:bg-app-accent-dark text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
+                        title="Ajouter au Keep Liste de courses"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
+                        Ajouter au Panier
+                    </button>
+                    <button 
+                        onclick="closeRecipeDetailsModal()"
+                        class="bg-slate-200 hover:bg-slate-300 text-slate-800 px-6 py-2 rounded-lg font-medium transition-colors"
+                    >
+                        Fermer
+                    </button>
+                </div>
+            `;
+
+            modal.style.display = 'flex';
+        };
+
+        const closeRecipeDetailsModal = () => {
+            document.getElementById('details-modal').style.display = 'none';
+        };
+
+        /** Rendu conditionnel des recettes dans le modal de remplacement. */
+        const renderAvailableRecipes = (recipes) => {
+            const listModal = document.getElementById('recipe-list-modal');
+            const currentRecipeId = weekPlan[replacingIndex]?.recipeId;
+
+            const html = recipes.map(recipe => {
+                const seasonalBadge = recipe.isSeasonalChoice ? `<span class="text-[10px] text-green-700 font-bold bg-green-100 px-1.5 py-0.5 rounded mt-1 inline-block">Saison</span>` : '';
+                const missingBadge = recipe.missing.length === 0 ? `<span class="text-[10px] text-green-600 font-bold bg-green-50 px-1.5 py-0.5 rounded mt-1 inline-block">Frigo complet</span>` : `<span class="text-[10px] text-orange-600 font-bold bg-orange-50 px-1.5 py-0.5 rounded mt-1 inline-block">${recipe.missing.length} manquants</span>`;
+                const difficultyHtml = renderDifficulty(recipe.difficulty);
+
+                return `
+                    <button 
+                        onclick="replaceRecipe(${replacingIndex}, ${recipe.id})"
+                        class="flex gap-3 p-2 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-200 transition-all text-left group"
+                    >
+                        <img src="${recipe.image}" alt="${recipe.title}" class="w-16 h-16 rounded-md object-cover" onerror="this.onerror=null;this.src='https://placehold.co/64x64/cbd5e1/475569?text=Recette'" />
+                        <div>
+                            <h4 class="font-bold text-slate-800 group-hover:text-app-primary">${recipe.title}</h4>
+                            <div class="text-xs text-slate-500 mt-1 flex gap-2 items-center">
+                                <span>${recipe.prepTime} + ${recipe.cookTime}</span>
+                                <span class="flex items-center gap-1">${difficultyHtml}</span>
+                            </div>
+                            <div class="text-xs text-slate-500 mt-1 flex gap-2">
+                                <span>${recipe.pricePerPerson}€/pers</span>
+                            </div>
+                            <div class="flex gap-2 mt-1">
+                                ${seasonalBadge}
+                                ${missingBadge}
+                            </div>
+                        </div>
+                    </button>
+                `;
+            }).join('');
+
+            listModal.innerHTML = html;
+        };
+
+        /** Filtre, trie et rend les recettes dans le modal de remplacement. */
+        const filterAndRenderRecipes = () => {
+            const currentRecipeId = weekPlan[replacingIndex]?.recipeId;
+            const searchTerm = document.getElementById('recipe-search-input').value.toLowerCase();
+
+            let availableRecipes = RECIPES_DB
+                // 1. Filtrer: Exclure la recette actuelle et appliquer la recherche
+                .filter(r => r.id !== currentRecipeId && r.title.toLowerCase().includes(searchTerm))
+                
+                .map(recipe => {
+                    let seasonalIngredientCount = 0;
+                    recipe.ingredients.forEach(ing => {
+                        if (isIngredientSeasonal(ing.name)) {
+                            seasonalIngredientCount++;
+                        }
+                    });
+                    const seasonalPercentage = recipe.ingredients.length > 0 ? (seasonalIngredientCount / recipe.ingredients.length) * 100 : 0;
+                    const isSeasonalChoice = seasonalPercentage >= 30;
+                    const missing = getMissingIngredients(recipe);
+                    
+                    return { ...recipe, missing, isSeasonalChoice };
+                })
+                
+                // 2. Trier: Par ordre alphabétique du titre
+                .sort((a, b) => a.title.localeCompare(b.title));
+                
+                // Si la recherche est vide, on retrie par saisonnalité/manquant
+                if (!searchTerm.trim()) {
+                    availableRecipes = availableRecipes.sort((a, b) => {
+                        if (a.isSeasonalChoice && !b.isSeasonalChoice) return -1;
+                        if (!a.isSeasonalChoice && b.isSeasonalChoice) return 1;
+                        return a.missing.length - b.missing.length;
+                    });
+                }
+
+            renderAvailableRecipes(availableRecipes);
+        };
+
+
+        const openReplaceModal = (index) => {
+            replacingIndex = index;
+            const modal = document.getElementById('replace-modal');
+            modal.style.display = 'flex';
+            filterAndRenderRecipes();
+        };
+
+        const replaceRecipe = (index, newRecipeId) => {
+            if (weekPlan[index]) {
+                weekPlan[index].recipeId = newRecipeId;
+                weekPlan[index].customServings = defaultServings; 
+                saveState();
+                renderRecipeGrid();
+                closeReplaceModal();
+            }
+        };
+
+        const closeReplaceModal = () => {
+            document.getElementById('replace-modal').style.display = 'none';
+            document.getElementById('recipe-search-input').value = ''; 
+            replacingIndex = null;
+        };
+
+        // Modal Liste de Courses
+        const showShoppingListModal = () => {
+            const list = generateShoppingList();
+            const modal = document.getElementById('shopping-modal');
+            const listContainer = document.getElementById('shopping-list-items');
+
+            document.getElementById('shopping-list-count').textContent = list.length;
+            document.getElementById('shopping-total-budget').textContent = `${calculateTotalBudget().toFixed(2)} €`;
+
+            if (list.length === 0) {
+                 listContainer.innerHTML = `
+                   <div class="p-8 text-center text-slate-400">
+                     <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-2 text-green-400"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                     <p>Vous avez tout ce qu'il vous faut !</p>
+                   </div>
+                 `;
+            } else {
+                 listContainer.innerHTML = `
+                    <ul class="divide-y divide-slate-100">
+                        ${list.map((item, idx) => `
+                            <li class="p-4 flex items-center gap-3 bg-white hover:bg-slate-50">
+                                <div class="w-5 h-5 border-2 border-slate-300 rounded flex-shrink-0"></div>
+                                <span class="font-bold text-slate-700">${item.qty} ${item.unit}</span>
+                                <span class="text-slate-600 capitalize">${item.name}</span>
+                            </li>
+                        `).join('')}
+                    </ul>
+                 `;
+            }
+
+            modal.style.display = 'flex';
+        };
+
+        const closeShoppingListModal = () => {
+            document.getElementById('shopping-modal').style.display = 'none';
+        };
+
+        const copyToClipboard = () => {
+            const list = generateShoppingList();
+            const text = `🛒 Liste de courses - Frigo Magique (Semaine)\n\n` + 
+                list.map(item => `[ ] ${item.qty} ${item.unit} ${item.name}`).join('\n') +
+                `\n\n💰 Budget estimé: ${calculateTotalBudget().toFixed(2)}€`;
+            
+            const tempTextArea = document.createElement("textarea");
+            tempTextArea.value = text;
+            document.body.appendChild(tempTextArea);
+            tempTextArea.select();
+            
+            try {
+                document.execCommand('copy');
+                showToast("Liste copiée ! Collez-la dans Google Keep.");
+            } catch (err) {
+                console.error('Erreur de copie:', err);
+                showToast("Erreur: Impossible de copier. Essayez manuellement.");
+            } finally {
+                document.body.removeChild(tempTextArea);
+            }
+        };
+
+        // --- 6. Initialisation ---
+        window.onload = () => {
+            loadState();
+            renderHeader();
+            renderRecipeGrid();
+        };
+
+    </script>
+</body>
+</html>
